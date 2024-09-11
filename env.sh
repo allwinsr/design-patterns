@@ -1,0 +1,21 @@
+#PATH VARIABLES
+export YOUR_SERVICE_PATH="$HOME/dev/service"
+
+#PORTS
+export DYNAMO_DB_PORT=8000
+export MYSQL_PORT=3307
+export MONGO_PORT=27017
+export ELASTIC_SEARCH_PORT=9200
+export KIBANA_PORT=5601
+export REDIS_PORT=6379
+export ZOOKEEPER_PORT=2181
+export KAFKA_PORT=9092
+export KAFKA_UI_PORT=9021
+
+#ENVIRONMENT_VARIABLES
+export LOCAL_END_POINT="http://dynamo:8000"
+export AWS_ACCESS_KEY="fake-access"
+export AWS_SECRET_KEY="fake-access"
+export AWS_DEFAULT_PROFILE="dynamo-db-local"
+export GLOBAL_MONGO_DB="global"
+export HOSTNAME="localhost"

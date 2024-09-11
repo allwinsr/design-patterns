@@ -1,0 +1,173 @@
+version: "3.9"
+services:
+  #DATABASES
+  #----------------------------------#
+  dynamodb:
+    image: amazon/dynamodb-local:1.22.0
+    hostname: dynamo
+    command: [ "-jar", "./DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/data" ]
+    volumes:
+      - ./volumes/dynamodb:/data/
+    ports:
+      - "${DYNAMO_DB_PORT}:8000"
+    networks:
+      - allwin-network
+
+  aws-cli:
+    image: amazon/aws-cli
+    environment:
+      AWS_DEFAULT_PROFILE: $AWS_DEFAULT_PROFILE
+      AWS_ENDPOINT: --endpoint-url=http://dynamo:8000
+    entrypoint: /bin/sh -c
+    volumes:
+      - './init-files/dynamo:/init-scripts'
+    command: >
+      ' 
+       /init-scripts/dynamo-config.sh &&
+       /init-scripts/dynamo-crud.sh &&
+       tail -f /dev/null
+      '
+    depends_on:
+      - dynamodb
+    networks:
+      - allwin-network
+
+  mysql:
+    image: mysql:latest
+    hostname: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_USERNAME: root
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "${MYSQL_PORT}:3306"
+    volumes:
+      - mysql-db:/var/lib/mysql
+      - ./init-files/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - allwin-network
+
+  mongo:
+    image: mongo:latest
+    hostname: mongodb
+    restart: always
+    ports:
+      - "${MONGO_PORT}:27017"
+    volumes:
+      - ./init-files/mongo/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - mongo-db:/data/db
+    networks:
+      - allwin-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.14.0
+    hostname: elasticsearch
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "${ELASTIC_SEARCH_PORT}:9200"
+    volumes:
+      - es-db:/usr/share/elasticsearch/data
+    networks:
+      - allwin-network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.14.0
+    hostname: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "${KIBANA_PORT}:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - allwin-network
+
+  redis:
+    image: redis:latest
+    hostname: redis
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis-db:/data
+    networks:
+      - allwin-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.2.1
+    hostname: kafka
+    ports:
+      - "${KAFKA_PORT}:9092"
+      - "9997:9997"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9997
+      KAFKA_JMX_OPTS: -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9997
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+    volumes:
+      - ./init-files/kafka/scripts/update_run.sh:/tmp/update_run.sh
+      - kafka-db:/var/lib/kafka/data
+    command: "bash -c 'if [ ! -f /tmp/update_run.sh ]; then echo \"ERROR: Did you forget the update_run.sh file that came with this docker-compose.yml file?\" && exit 1 ; else chmod +x /tmp/update_run.sh && /tmp/update_run.sh && /etc/confluent/docker/run ; fi'"
+    networks:
+      - allwin-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "${KAFKA_UI_PORT}:8080"
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9997
+      DYNAMIC_CONFIG_ENABLED: 'true'
+    volumes:
+      - kafka-ui-data:/data
+      - kafka-ui-config:/config
+    networks:
+      - allwin-network
+
+  # Utility
+  bash-executor:
+    image: debian
+    depends_on:
+      - elasticsearch
+      - redis
+    volumes:
+      - ./init-files/es/es-script.sh:/es-script.sh
+      - ./init-files/redis/redis.sh:/redis.sh
+    command: bash -c "sleep 10 && apt-get update && apt-get install -y curl redis-tools && bash && sh es-script.sh && sh redis.sh"
+    networks:
+      - allwin-network
+
+volumes:
+  dynamo-db:
+  mysql-db:
+  mongo-db:
+  es-db:
+  kafka-db:
+  kafka-ui-data:
+  kafka-ui-config:
+  redis-db:
+  zookeeper-db:
+  config-service:
+  discovery-service:
+  aws-cli-data:
+networks:
+  allwin-network:
+    driver: bridge
+
+
